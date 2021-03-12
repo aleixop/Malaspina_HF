@@ -6,17 +6,20 @@ Code and data included in "A handful of widespread species dominate heterotrophi
 
 Phyloseq objects including counts, taxonomy and sample metadata can be found in `tables/`. They are formatted as `.rds` objects and can be imported to `R` using the `readRDS` command.
 
-|Object                        |Description                                                                                               |
-|:-----------------------------|:---------------------------------------------------------------------------------------------------------|
-|`MPN_18S.phy`                 |All samples considered in this study (287) and all taxa                                                   |
-|`MPN_18S_DNA.phy`             |DNA samples (188) with all taxa                                                                           |
-|`MPN_18S_HF.phy`              |DNA & RNA samples (279) with HF taxa                                                                      |
-|`MPN_18S_HF_DNA.phy`          |DNA samples (188) with HF taxa                                                                            |
-|`MPN_18S_HF_DNA_SF.phy`       |Surface DNA samples (127) with HF taxa                                                                    |
-|`MPN_18S_HF_DNA_VP.phy`       |Vertical profiles DNA samples (73) with HF taxa                                                           |
-|`MPN_18S_HF_RNA.phy`          |RNA samples (91) with HF taxa                                                                             |
-|`MPN_18S_HF_SF_DNA_top52.phy` |Top 52 HF taxa in the 127 DNA surface samples                                                             |
-|`MPN_VP_mTags.phy`            |mTags tables published in [Obiol et al. 2020](https://doi.org/10.1111/1755-0998.13147) in phyloseq format |
+|Object                        |Description                                                                                                                                                                             |
+|:-----------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|`MPN_18S.phy`                 |All samples considered in this study (287) and all taxa                                                                                                                                 |
+|`MPN_18S_DNA.phy`             |DNA samples (188) with all taxa                                                                                                                                                         |
+|`MPN_18S_HF.phy`              |DNA & RNA samples (279) with HF taxa                                                                                                                                                    |
+|`MPN_18S_HF_DNA.phy`          |DNA samples (188) with HF taxa                                                                                                                                                          | 
+|`MPN_18S_HF_DNA_SF.phy`       |Surface DNA samples (127) with HF taxa                                                                                                                                                  |
+|`MPN_18S_HF_DNA_VP.phy`       |Vertical profiles DNA samples (73) with HF taxa                                                                                                                                         |
+|`MPN_18S_HF_RNA.phy`          |RNA samples (91) with HF taxa                                                                                                                                                           |
+|`MPN_18S_HF_SF_DNA_top52.phy` |Top 52 HF taxa in the 127 DNA surface samples                                                                                                                                           |
+|`MPN_VP_V9.phy`               |V9 amplicons table published in [Obiol et al. 2020](https://doi.org/10.1111/1755-0998.13147)                                                                                            |
+|`MPN_VP_mTags.phy`            |mTags tables published in [Obiol et al. 2020](https://doi.org/10.1111/1755-0998.13147)                                                                                                  |
+|`TARA_HF.phy`                 |TARA V9 amplicons with HF taxa published in [de Vargas et al. 2015](https://doi.org/10.1126/science.1261605). Data downloaded from [Callahan 2017](http://doi.org/10.5281/zenodo.581694)|
+
 
 ## R scripts used in the analysis
 
@@ -26,7 +29,7 @@ All R scripts used in this study can be found in `scripts/`.
 |:----------------------------|:--------------------------------------------------------------------------------------------------------------------------|
 |`0-phyloseq_setup.Rmd`       |Creation of all phyloseq objects                                                                                           |
 |`1-HF_distribution.Rmd`      |HF distributions at the ASV/group level, alpha and betadiversity analyses                                                  |
-|`2-validation_RNA_mtags.Rmd` |Comparison of DNA distribution results with RNA and metagenomes                                                            |
+|`2-validation.Rmd`           |Comparison of DNA distribution results with RNA, Malaspina V9 amplicons, metagenomes and TARA Oceans datasets              |
 |`3-main_species.Rmd`         |Analysis of the main species in surface and vertical profiles                                                              |
 |`4-network_analyses.Rmd`     |Correlation netork analyses                                                                                                |
 |`GMPR.R`                     |Auxiliary function for read normalization in the heatmap analysis ([Chen et al. 2018](https://doi.org/10.7717/peerj.4600)) |
