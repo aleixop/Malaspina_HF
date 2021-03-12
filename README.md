@@ -16,7 +16,7 @@ Phyloseq objects including counts, taxonomy and sample metadata can be found in 
 |`MPN_18S_HF_DNA_VP.phy`       |Vertical profiles DNA samples (73) with HF taxa                                                                                                                                         |
 |`MPN_18S_HF_RNA.phy`          |RNA samples (91) with HF taxa                                                                                                                                                           |
 |`MPN_18S_HF_SF_DNA_top52.phy` |Top 52 HF taxa in the 127 DNA surface samples                                                                                                                                           |
-|`MPN_VP_V9.phy`               |V9 amplicons table published in [Obiol et al. 2020](https://doi.org/10.1111/1755-0998.13147)                                                                                            |
+|`MPN_VP_V9_HF.phy`            |V9 amplicons table with HF taxa published in [Obiol et al. 2020](https://doi.org/10.1111/1755-0998.13147)                                                                               |
 |`MPN_VP_mTags.phy`            |mTags tables published in [Obiol et al. 2020](https://doi.org/10.1111/1755-0998.13147)                                                                                                  |
 |`TARA_HF.phy`                 |TARA V9 amplicons with HF taxa published in [de Vargas et al. 2015](https://doi.org/10.1126/science.1261605). Data downloaded from [Callahan 2017](http://doi.org/10.5281/zenodo.581694)|
 
