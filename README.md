@@ -32,11 +32,10 @@ All R scripts used in this study can be found in `scripts/`.
 |`2-comparison.Rmd`           |Comparison of DNA distribution results with RNA, Malaspina V9 amplicons, metagenomes and TARA Oceans datasets              |
 |`3-main_taxa.Rmd`            |Analysis of the main species in surface and vertical profiles                                                              |
 |`4-network_analyses.Rmd`     |Correlation network analyses                                                                                                |
-|`ended.sh`                   |Bash script to run [EnDED](https://github.com/InaMariaDeutschmann/EnDED)
 |`GMPR.R`                     |Auxiliary function for read normalization in the heatmap analysis ([Chen et al. 2018](https://doi.org/10.7717/peerj.4600)) |
 |`aux_functions.R`            |Auxiliary functions used in this study                                                                                     |
 
-The following packages are needed to run all R scripts.
+The following packages are required:
 
   - `ComplexHeatmap`
   - `DivNet`
@@ -78,6 +77,7 @@ The alignments used for building phylogenetic trees of HF groups can be found in
 ## Correlation results
 
 Results of [sparCC](https://github.com/scwatts/fastspar) can be found in `correlations/` for HF only and prokaryotes and HF together. 
+Bash script to run [EnDED](https://github.com/InaMariaDeutschmann/EnDED) can be found in `correlations/EnDED/ended.sh`.
 
 ## DivNet and corncob results 
 
