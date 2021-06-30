@@ -31,9 +31,33 @@ All R scripts used in this study can be found in `scripts/`.
 |`1-HF_distribution.Rmd`      |HF distributions at the ASV/group level, alpha and betadiversity analyses                                                  |
 |`2-comparison.Rmd`           |Comparison of DNA distribution results with RNA, Malaspina V9 amplicons, metagenomes and TARA Oceans datasets              |
 |`3-main_taxa.Rmd`            |Analysis of the main species in surface and vertical profiles                                                              |
-|`4-network_analyses.Rmd`     |Correlation netork analyses                                                                                                |
+|`4-network_analyses.Rmd`     |Correlation network analyses                                                                                                |
+|`ended.sh`                   |Bash script to run [EnDED](https://github.com/InaMariaDeutschmann/EnDED)
 |`GMPR.R`                     |Auxiliary function for read normalization in the heatmap analysis ([Chen et al. 2018](https://doi.org/10.7717/peerj.4600)) |
 |`aux_functions.R`            |Auxiliary functions used in this study                                                                                     |
+
+The following packages are needed to run all R scripts.
+
+  - `ComplexHeatmap`
+  - `DivNet`
+  - `RColorBrewer`
+  - `ape`
+  - `corncob`
+  - `geodist`
+  - `ggnewscale`
+  - `ggraph`
+  - `ggsci`
+  - `ggtext`
+  - `ggtree`
+  - `patchwork`
+  - `reshape2`
+  - `speedyseq`
+  - `tidygraph`
+  - `tidytree`
+  - `tidyverse`
+  - `treeio`
+  - `vegan`
+  - `viridis`
 
 ## Alignments of phylogenetic trees
 
