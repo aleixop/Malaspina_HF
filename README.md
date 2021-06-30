@@ -77,6 +77,7 @@ The alignments used for building phylogenetic trees of HF groups can be found in
 ## Correlation results
 
 Results of [sparCC](https://github.com/scwatts/fastspar) can be found in `correlations/` for HF only and prokaryotes and HF together. 
+
 Bash script to run [EnDED](https://github.com/InaMariaDeutschmann/EnDED) can be found in `correlations/EnDED/ended.sh`.
 
 ## DivNet and corncob results 
