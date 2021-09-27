@@ -1,6 +1,11 @@
 # Oceanic heterotrophic flagellates are dominated by a few widespread taxa 
 
-Code and data included in "Oceanic heterotrophic flagellates are dominated by a few widespread taxa". These will be released when the article is published.
+This repository contains code and data included in:
+
+--------
+Obiol, A., Muhovic I. and Massana, R. Oceanic heterotrophic flagellates are dominated by a few widespread taxa. *Limnol. Oceanogr.* (in press)
+
+--------
 
 ## Phyloseq objects
 
