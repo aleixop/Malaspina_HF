@@ -1,5 +1,8 @@
 # Oceanic heterotrophic flagellates are dominated by a few widespread taxa 
 
+[![DOI](https://zenodo.org/badge/323586484.svg)](https://zenodo.org/badge/latestdoi/323586484)
+
+
 This repository contains code and data included in:
 
 --------
