@@ -1,0 +1,539 @@
+---
+title: "Main HF species"
+author: "Aleix Obiol"
+date: "12/28/2020"
+output: html_document
+---
+
+# Load auxiliary functions and specific packages
+
+```{r}
+source('aux_functions.R')
+library(corncob)
+library(ggnewscale)
+library(tidytree)
+library(ggtree)
+library(treeio)
+library(ggsci)
+library(RColorBrewer)
+library(ComplexHeatmap)
+```
+
+# Load phyloseq objects and other tables
+
+```{r}
+mpn_hf_dna <- 
+  readRDS('../tables/MPN_18S_HF_DNA.phy')
+
+mpn_hf_dna_perc <- 
+  mpn_hf_dna %>% 
+  transform_sample_counts(percentage)
+
+mpn_hf_rna <- 
+  readRDS('../tables/MPN_18S_HF_RNA.phy')
+
+mpn_hf_rna_perc <- 
+  mpn_hf_rna %>% 
+  transform_sample_counts(percentage)
+
+mpn_hf_sf <- 
+  readRDS('../tables/MPN_18S_HF_DNA_SF.phy')
+
+hf_sf_gmpr <- 
+  mpn_hf_sf %>% 
+  gmpr_norm()
+
+mpn_hf_sf_top52 <- 
+  readRDS('../tables/MPN_18S_HF_SF_DNA_top52.phy')
+
+hf_mpn_groups_order <- 
+  readRDS('../other/hf_groups_fct_order.rds')
+
+final_tree_names <- 
+  read_tsv('../other/tree_top52sf_names.txt') %>% 
+  select(ASVid, FINAL_NAME)
+
+hf_sf_topspecies_tree <- 
+  read_tree('../other/top_sf_hf_52_v3.pir.rooted')
+
+asv_behaviour <- 
+  read_tsv('../other/sf_top52_behaviour.txt') 
+```
+
+# Main HF species
+
+## Corncob test
+
+```{r}
+# hf_sf_cc <-
+#   mpn_hf_sf
+# 
+# sample_data(hf_sf_cc) <-
+#   sample_data(hf_sf_cc)[,c('Temp', 'Ox_mL_L', 'Fluo', 'Sal', 'Cond')] %>%
+#   scale() %>%
+#   as.data.frame() %>%
+#   rownames_to_column('Sample') %>%
+#   left_join(sample_data(hf_sf_cc)[,c('Sub_ocean')] %>%
+#               as('data.frame') %>%
+#               rownames_to_column('Sample')) %>%
+#   column_to_rownames('Sample')
+# 
+# tax_table(hf_sf_cc) <-
+#   tax_table(hf_sf_cc)[,'Group']
+# 
+# difftest_sf_asv <-
+#   colnames(sample_data(hf_sf_cc)) %>%
+#   set_names(x = map(.x = .,
+#                     .f = ~ corncob_test(physeq = hf_sf_cc,
+#                                         var = .x)),
+#             nm = .)
+# 
+# env_results_sf_asv <-
+#   difftest_sf_asv %>%
+#   map_dbl(~.x$significant_taxa %>%
+#             length()) %>% .[ . > 0] %>% names()
+# 
+# coeffs_corncob_sf_asv <-
+#   env_results_sf_asv %>%
+#   set_names(x = map(., ~obtain_coeffs(difftest_sf_asv[[.x]])),
+#             nm = .) %>%
+#   bind_rows(.id = 'par') %>%
+#   as_tibble()  %>%
+#   rename( 'estimate' = x,
+#           'upper' = xmax,
+#           'lower' = xmin)
+# 
+# saveRDS(coeffs_corncob_sf_asv, '../analysis/corncob_sf_hf.rds')
+
+coeffs_corncob_sf_asv <- 
+  readRDS('../analysis/corncob_sf_hf.rds')
+```
+
+## Table S6
+
+```{r}
+diff_abun_temp_sf <- 
+  coeffs_corncob_sf_asv %>% 
+  filter(par == 'Temp') %>% 
+  select(ASVid = asv, 
+         estimate) %>% 
+  mutate(diffTemp = case_when(is.na(estimate) ~ 'ns',
+                              estimate > 0 ~ 'up',
+                              estimate < 0 ~ 'down'),
+         Layer = factor('Surface')) %>% 
+  select(-estimate)
+
+all_species_totals <- 
+  mpn_hf_dna_perc %>% 
+  psmelt() %>%
+  rename(ASVid = OTU) %>% 
+  as_tibble() %>% 
+  group_by(ASVid, Layer) %>% 
+  group_by_at(colnames(tax_table(mpn_hf_dna_perc)),.add = T) %>% 
+  summarise(Total = sum(Abundance),
+            Mean = mean(Abundance),
+            SD = sd(Abundance),
+            Prevalence = sum(Abundance > 0),
+            Prevalence_perc = 100*Prevalence/n_distinct(Sample)) %>% 
+  filter(Total > 0) %>% 
+  group_by(Layer) %>% 
+  arrange(-Total) %>% 
+  mutate(cumulative = cumsum(100*Total/sum(Total))) %>% 
+  arrange(Layer, cumulative) %>% 
+  mutate(ord = rank(cumulative)) %>% 
+  left_join(diff_abun_temp_sf) %>% 
+  mutate(diffTemp = 
+           case_when(is.na(diffTemp) & Layer == 'Surface' ~ 'ns',
+                     is.na(diffTemp) ~ '-',
+                     TRUE ~ diffTemp),
+         Group = factor(Group, levels = hf_mpn_groups_order))
+
+all_species_totals_1030_dna <- 
+  mpn_hf_dna_perc %>% 
+  psmelt() %>%
+  rename(ASVid = OTU) %>% 
+  as_tibble() %>% 
+  group_by(ASVid) %>% 
+  group_by_at(colnames(tax_table(mpn_hf_dna_perc)),.add = T) %>% 
+  summarise(Total = sum(Abundance),
+            Mean = mean(Abundance),
+            SD = sd(Abundance),
+            Prevalence = sum(Abundance > 0),
+            Prevalence_perc = 100*Prevalence/n_distinct(Sample)) %>% 
+  filter(Total > 0) %>% 
+  ungroup() %>% 
+  select(ASVid, 
+         Prevalence_DNA = Prevalence, 
+         Mean_DNA = Mean, 
+         SD_DNA = SD)
+
+all_species_totals_1030_rna <- 
+  mpn_hf_rna_perc %>%
+  prune_taxa(taxa = taxa_names(mpn_hf_dna)) %>% 
+  psmelt() %>% 
+  rename(ASVid = OTU) %>% 
+  as_tibble() %>% 
+  group_by(ASVid) %>% 
+  group_by_at(colnames(tax_table(mpn_hf_rna_perc)),.add = T) %>% 
+  summarise(Total = sum(Abundance),
+            Mean = mean(Abundance),
+            SD = sd(Abundance),
+            Prevalence = sum(Abundance > 0),
+            Prevalence_perc = 100*Prevalence/n_distinct(Sample)) %>% 
+  filter(Total > 0) %>% 
+  ungroup() %>% 
+  select(ASVid, 
+         Prevalence_RNA = Prevalence, 
+         Mean_RNA = Mean, 
+         SD_RNA = SD)
+
+tableS6A <- 
+  all_species_totals %>% 
+  select(ASVid,
+         ASV = SPECIES_NAME,
+         Supergroup,
+         Group,
+         Sequence = ASV,
+         Layer,
+         Prevalence,
+         Mean,
+         SD) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = Layer,
+              values_from = c(Prevalence,Mean,SD),
+              values_fill = 0) %>% 
+  select(ASVid, 
+       ASV,
+       Supergroup,
+       Group,
+       Sequence,
+       contains('Surface'),
+       contains('DCM'),
+       contains('Mesopelagic'),
+       contains('Bathypelagic')) %>% 
+  left_join(all_species_totals_1030_dna) %>% 
+  left_join(all_species_totals_1030_rna) %>% 
+  separate(ASV, into = c('MAST','Clade'), sep = '-', remove = F) %>% 
+  mutate(Group = case_when(grepl('MAST-sp',ASV) ~ as.character(Group),
+                           grepl('MAST',ASV) ~ paste0(MAST,'-',Clade),
+                           TRUE ~ as.character(Group))) %>% 
+  select(-MAST,-Clade) %>% 
+  arrange(-Mean_DNA)
+
+mpn_hf_rna_unique <- 
+  mpn_hf_rna %>% 
+  prune_taxa(taxa = !taxa_names(.) %in% taxa_names(mpn_hf_dna))
+
+tableS6B <- 
+  mpn_hf_rna_unique %>% 
+  tax_table() %>% 
+  as.data.frame() %>% 
+  as_tibble(rownames = 'ASVid') %>% 
+  select(ASVid,
+         Group,
+         Supergroup,
+         Sequence = ASV) %>% 
+  arrange(Supergroup, Group)
+```
+
+## Table S5
+
+```{r}
+thresholds <- 
+  c(60,80,95)
+
+tableS5 <- 
+  thresholds %>% 
+  map(.x = .,
+         .f = ~ all_species_totals %>% 
+            filter(lag(cumulative, default = 0) <= .x) %>% 
+            group_by(Layer, Group) %>% 
+            summarise(num_asvs = n()) %>% 
+            spread(Layer,num_asvs) %>% 
+            rename_with(function(x) paste0(x,"_",.x), -Group) %>% 
+            bind_rows(summarise_all(., funs(if(is.numeric(.)) sum(.,na.rm = T) else "TOTAL"))) %>% 
+            mutate_all(as.character)) %>% 
+  reduce(full_join)
+  
+tableS5[is.na(tableS5)] <- '-'
+```
+
+## Table 1
+
+```{r}
+table1 <- 
+  all_species_totals %>% 
+  slice_head(n = 10) %>% 
+  mutate(name = paste0(str_remove(pattern = 'ASV_',ASVid),'/ ',SPECIES_NAME)) %>% 
+  select(name, Mean, SD, Prevalence_perc)
+```
+
+
+## Figure 4
+
+```{r}
+coeffs_topspecies <- 
+  coeffs_corncob_sf_asv %>% 
+  filter(par %in% c('Temp'), 
+         asv %in% taxa_names(mpn_hf_sf_top52)) %>% 
+  select(ASVid = asv,
+         par,
+         estimate) %>% 
+  mutate(estimate = ifelse(abs(estimate) < 0.5, NA, estimate)) %>% 
+  spread(par, estimate, fill = NA)
+
+# create data frame with all metadata needed
+top52_sf_metadata_0 <- 
+  tax_table(mpn_hf_sf_top52) %>% 
+  as.data.frame() %>% 
+  as_tibble(rownames = 'ASVid') %>% 
+  left_join(all_species_totals %>% 
+              filter(Layer == 'Surface') %>% 
+              select(ASVid, Mean,SD,Prevalence, Prevalence_perc)) %>% 
+  left_join(final_tree_names) %>% 
+  left_join(coeffs_topspecies) %>% 
+  mutate(Supergroup2 = case_when(Group %in% c('Telonemia','Picozoa') ~ Group,
+                                 TRUE ~ Supergroup)) %>% 
+  mutate(prevalence_bins = case_when(Prevalence_perc < 60 ~ '45-60%',
+                                     Prevalence_perc < 80 ~ '60-80%',
+                                     Prevalence_perc < 95 ~ '80-95%',
+                                     Prevalence_perc < 100 ~ '95-100%'),
+         mean_bins = case_when(Mean < 1 ~ '0.5-1%',
+                               Mean < 2 ~ '1-2%',
+                               Mean < 3 ~ '2-3%',
+                               Mean < 4 ~ '3-4%'),
+         prevalence_bins = factor(prevalence_bins, levels = c('95-100%','80-95%','60-80%','45-60%')),
+         mean_bins = factor(mean_bins, levels = c('3-4%', '2-3%','1-2%','0.5-1%')))
+
+# rename tree
+hf_sf_topspecies_tree_names <- 
+  rename_taxa(tree = hf_sf_topspecies_tree,
+              data = top52_sf_metadata_0,
+              value = NAME_AT_TREE2)
+
+top52_sf_metadata <- 
+  top52_sf_metadata_0 %>% 
+  select(id = NAME_AT_TREE2, everything())
+
+# tree
+tree0.1 <- 
+  ggtree(hf_sf_topspecies_tree_names) %<+% 
+  top52_sf_metadata
+
+tree0.2 <- groupClade(tree0.1, .node = c(55,36,92,102,103,52))
+
+tree0.3 <-
+  tree0.2 +
+  aes(color = group) +
+  scale_color_manual(values = c('black',pal_d3()(6)), guide = 'none')
+  
+base_tree <- 
+  tree0.3 +
+  geom_tiplab(aes(label = FINAL_NAME),
+              align = T,
+              parse = T,
+              show.legend = F,
+              color = 'black',
+              offset = 0.02) +
+  geom_tippoint(aes(fill = behaviour), 
+                size = 4,
+                color = 'gray20',
+                shape = 21) +
+  scale_fill_manual(values = c(cold = 'royalblue',
+                               warm = 'firebrick',
+                               patchy = 'peru',
+                               equal = 'seagreen4'),
+                    name = 'Behavior') +
+  new_scale_fill() +
+  xlim(0,2) +
+  geom_treescale(x = 0, y = 45)
+
+p1 <- 
+  gheatmap(p = base_tree,
+           data = top52_sf_metadata %>% 
+             select(id,Prevalence = prevalence_bins) %>% 
+             column_to_rownames('id'),
+          offset = .55,
+          width = .04,
+          colnames_angle=45,
+          colnames_offset_y = -0.9,
+          colnames_offset_x = -0.02,
+          color = 'gray70') +
+    scale_fill_manual(name = 'Prevalence',
+                      values = c('#f7f7f7','#cccccc','#969696','#525252'))
+
+p1.5 <- 
+  p1 +
+  new_scale_fill()
+
+# data nodes
+nodes_data <- 
+  p1.5$data %>% 
+  as_tibble() %>% 
+  mutate(Supergroup2 = case_when(node == 55 ~ 'Stramenopiles',
+                                 node == 36 ~ 'Telonemia',
+                                 node == 92 ~ 'Picozoa',
+                                 node == 102 ~ 'Cryptista',
+                                 node == 103 ~ 'Haptista',
+                                 node == 52 ~ 'Opisthokonta')) %>% 
+  filter(!is.na(Supergroup2)) %>% 
+  mutate(Supergroup2 = factor(Supergroup2, levels = c('Stramenopiles',
+                                                      'Telonemia',
+                                                      'Picozoa',
+                                                      'Cryptista',
+                                                      'Haptista',
+                                                      'Opisthokonta')))
+  
+p2 <-
+  gheatmap(p = p1.5,
+    data = top52_sf_metadata %>% 
+             select(id,Mean = mean_bins) %>% 
+             column_to_rownames('id'),
+          offset = .593,
+          width = .04,
+          colnames_angle=45,
+          colnames_offset_y = -0.3,
+    colnames_offset_x = -0.01,
+    color = 'gray70') +
+    scale_fill_manual(name = 'Mean relative \nabundance',
+                      values = c('#f7f7f7','#cccccc','#969696','#525252')) +
+  ylim(-2,53)
+
+p2.5 <- 
+  p2 +
+  new_scale_fill()
+
+p3 <- 
+  p2.5 +
+  geom_label(data = nodes_data,
+               aes(label = Supergroup2,
+                   fill = Supergroup2),
+             hjust = 1.3,
+             color = 'white',
+             show.legend = FALSE) +
+  scale_fill_d3() 
+
+p3.5 <- 
+  p3 + 
+  new_scale_fill()
+
+fig4 <- # did some editing in Illustrator
+  gheatmap(p = p3.5,
+    data = top52_sf_metadata %>% 
+             select(id, 'Temp estimate' = Temp) %>% 
+             column_to_rownames('id'),
+          offset = .637,
+          width = .04,
+          colnames_angle=45,
+          colnames_offset_y = -1.2,
+    colnames_offset_x = -0.023) +
+    scale_fill_gradient2(name = 'Temperature\nestimate',
+                         low = 'royalblue',
+                         high = 'firebrick',
+                         na.value = 'white',
+                         guide = 'colourbar')
+
+ggsave(fig4,
+       filename = 'fig4.pdf',
+       height = 12,
+       width = 15)
+```
+
+## Figure S8
+
+```{r}
+asv_behaviour_estimate <- 
+  asv_behaviour %>% 
+  left_join(coeffs_corncob_sf_asv %>% 
+              filter(par == 'Temp',
+                     asv %in% taxa_names(mpn_hf_sf_top52)) %>% 
+              select(ASVid = asv,estimate))
+
+hf_sf_topspecies_gmpr <- 
+  hf_sf_gmpr %>%
+  prune_taxa(taxa = taxa_names(mpn_hf_sf_top52))
+
+mat_sf <- 
+  otu_table(hf_sf_topspecies_gmpr) %>% 
+  as('matrix')
+
+env_sf <- 
+  sample_data(hf_sf_topspecies_gmpr)[,'Temp'] %>% 
+  as('matrix')
+
+heatmap_palette <- 
+  colorRampPalette(rev(brewer.pal(n = 20, name =
+  "Spectral")))(100)
+
+ha_row_right <- 
+  rowAnnotation(foo = anno_text(tax_table(hf_sf_topspecies_gmpr) %>% 
+                            as.data.frame() %>%
+                            as_tibble(rownames = 'ASVid') %>% 
+                            select(ASVid) %>% 
+                            left_join(hf_sf_topspecies_gmpr %>% 
+                                        tax_table() %>% 
+                                        as.data.frame() %>% 
+                                        as_tibble(rownames = 'ASVid') %>% 
+                                        select(ASVid, ASV = SPECIES_NAME)) %>% 
+                            separate(ASVid, into = c('asv','num'), remove = F, sep = '_') %>% 
+                            mutate(ASV = paste0(num,' / ',ASV)) %>% 
+                            pull(ASV),
+                          gp = gpar(fontsize = 10)))
+
+ha_row_left <- 
+  rowAnnotation(df = tax_table(hf_sf_topspecies_gmpr)[,'Group'] %>% 
+                  as.data.frame() %>%
+                  rownames_to_column('asv') %>% 
+                  left_join(asv_behaviour_estimate, by = c('asv' = 'ASVid')) %>% 
+                  column_to_rownames('asv') %>% 
+                  select(Index,
+                         Estimate = estimate,
+                         Behavior = behaviour) %>% 
+                  mutate(Estimate = case_when((Estimate > -0.5 & Estimate < 0.5) ~ NA_real_,
+                                              # Behavior == 'patchy' ~ NA_real_,
+                                              TRUE ~ Estimate)),
+                col = list(
+                           Behavior = c(cold = 'royalblue',
+                                         warm = 'firebrick',
+                                         patchy = 'peru',
+                                         equal = 'seagreen4'),
+                              Estimate = circlize::colorRamp2(c(-2, -1, 0, 1, 2), c('royalblue','royalblue','white','firebrick','firebrick')),
+                           Index = circlize::colorRamp2(c(0, 1.99999,2,3.9999,4,6), 
+                                                        c("#000004FF","#420A68FF",
+                                                          "#932667FF", "#DD513AFF", 
+                                                          "#FCA50AFF", "#FCFFA4FF"))), na_col = NA)
+
+temp_values <- 
+  sort(sample_data(hf_sf_topspecies_gmpr)$Temp)
+
+ha_col <- 
+  columnAnnotation(df = sample_data(hf_sf_topspecies_gmpr)[,'Temp'] %>% 
+                     as('data.frame') %>% 
+                     rename(Temperature = Temp),
+                   col = list(Temperature = circlize::colorRamp2(temp_values,viridis(length(temp_values)))))
+
+set.seed(1)
+figS8 <- # did minimal editing with Illustrator
+  Heatmap(matrix = log10(mat_sf+1),
+          clustering_method_rows = 'ward.D2',
+          clustering_method_columns = 'ward.D2',
+          show_column_names = FALSE,
+          show_row_names = FALSE,
+          col = heatmap_palette,
+          left_annotation = ha_row_left,
+          right_annotation = ha_row_right,
+          top_annotation = ha_col,
+          row_names_gp = gpar(fontsize = 10),
+          na_col = NA,
+          name = 'log10(reads+1)')
+
+pdf('figS8.pdf',
+    height = 10,
+    width = 15)
+figS8
+dev.off()
+```
+
+
+
+

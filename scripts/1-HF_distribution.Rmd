@@ -1,0 +1,689 @@
+---
+title: "HF distribution"
+author: "Aleix Obiol"
+date: "12/28/2020"
+output: html_document
+---
+
+# Load auxiliary functions and specific packages
+
+```{r}
+source('aux_functions.R')
+library(DivNet)
+library(geodist)
+library(reshape2)
+library(ape)
+```
+
+# Load phyloseq objects
+
+```{r}
+mpn_dna <- 
+  readRDS('../tables/MPN_18S_DNA.phy')
+
+mpn_hf <- 
+  readRDS('../tables/MPN_18S_HF.phy')
+
+mpn_hf_dna <- 
+  readRDS('../tables/MPN_18S_HF_DNA.phy')
+
+mpn_hf_sf <- 
+  readRDS('../tables/MPN_18S_HF_DNA_SF.phy')
+
+mpn_hf_vp_dna <- 
+  readRDS('../tables/MPN_18S_HF_DNA_VP.phy')
+
+hf_sf_perc <- 
+  mpn_hf_sf %>% 
+  transform_sample_counts(percentage)
+
+hf_vp_dna_perc <-
+  mpn_hf_vp_dna %>% 
+  transform_sample_counts(percentage)
+
+mpn_hf_dna_perc <- 
+  mpn_hf_dna %>% 
+  transform_sample_counts(percentage)
+
+mpn_dna_perc <- 
+  mpn_dna %>% 
+  transform_sample_counts(percentage)
+```
+
+# HF distributions
+
+## Compute `DivNet` analysis
+
+```{r}
+# divnet_analysis <-
+#   divnet(mpn_hf_dna,
+#          ncores = 16,
+#          base = 'ASV_51m')
+# 
+# saveRDS(divnet_analysis,
+#         '../analysis/divnet_analysis.rds')
+
+divnet_analysis <- 
+  readRDS('../analysis/divnet_analysis.rds')
+```
+
+
+## Define HF groups order and colors
+
+```{r}
+hf_mpn_groups_order <- 
+  mpn_hf_dna %>% 
+  psmelt() %>% 
+  group_by(Group) %>% 
+  summarise(total = sum(Abundance)) %>% 
+  arrange(-total) %>% 
+  pull(Group)
+
+saveRDS(hf_mpn_groups_order,
+        '../other/hf_groups_fct_order.rds')
+
+hf_mpn_groups <- 
+  mpn_hf_dna %>% 
+  tax_table() %>% 
+  .[,'Group'] %>% 
+  as.character() %>% 
+  unique() %>% 
+  factor(., levels = hf_mpn_groups_order) %>% 
+  sort()
+  
+col_values <- 
+  c("pink1", "violet", "mediumpurple1", "slateblue1", "purple", "darkslateblue",
+  "turquoise2", "skyblue", "steelblue", "blue2", "navyblue", "palegreen4","yellowgreen","tan",
+  "palevioletred", "violetred", "red2", "coral3", 
+  "wheat2", "tan", "tan2", "tan3", "brown",
+  "orange", "tomato","springgreen2",
+  "grey70", "grey50", "grey30")
+
+col_list <- 
+  c(set_names(col_values[1:length(hf_mpn_groups)], hf_mpn_groups), Other = 'gray60')
+
+saveRDS(col_list, 
+        '../other/group_colors.rds')
+```
+
+## Figure 1
+
+```{r}
+collapsed_group_df <- 
+  mpn_hf_dna_perc %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  group_by(Layer,Group) %>% 
+  summarise(total_relabun = sum(Abundance)) %>% 
+  mutate(perc = 100*total_relabun/sum(total_relabun),
+         Group = factor(Group, levels = hf_mpn_groups_order))
+
+num_groups_to_show <- 14
+
+collapsed_group_df_reduced <- 
+  mpn_hf_dna_perc %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  mutate(Group = ifelse(Group %in% hf_mpn_groups_order[1:num_groups_to_show], Group, 'Other')) %>% 
+  group_by(Layer,Group) %>% 
+  summarise(total_relabun = sum(Abundance)) %>% 
+  mutate(perc = 100*total_relabun/sum(total_relabun),
+         Group = factor(Group, levels = c(hf_mpn_groups_order[1:num_groups_to_show],'Other')))
+
+set.seed(1)
+
+p_shannon_layer <- 
+  summary(divnet_analysis$shannon) %>% 
+  left_join(as_tibble(sample_data(mpn_hf_dna), rownames = 'sample_names')) %>% 
+  ggplot(aes(y = fct_rev(Layer), x = estimate)) + 
+    geom_jitter(alpha = 0.4, 
+              width = 0.2) +
+  geom_boxplot(outlier.color = NULL,
+               alpha = 0.7,
+               size = 0.3) +
+  guides(fill = 'none') +
+  ylab(NULL) +
+  xlab('Shannon estimate') +
+  theme(panel.grid = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+perc_picoeuk_all <- 
+  tibble(Sample = sample_names(mpn_dna),
+         Percentage = 100*sample_sums(mpn_hf_dna)/sample_sums(mpn_dna)) %>% 
+  left_join(as_tibble(sample_data(mpn_dna)[,'Layer'],rownames = 'Sample')) %>% 
+  mutate(Layer = factor(Layer, levels = rev(levels(Layer))))
+
+p_perc_picoeuk <- 
+  ggplot(data = perc_picoeuk_all,
+         aes(y = Layer, x =Percentage)) +
+  geom_jitter(alpha = 0.4, 
+              height = 0.2) +
+  geom_boxplot(outlier.color = NULL,
+               alpha = 0.7,
+               size = 0.3) +
+  theme(panel.grid = element_blank()) +
+  guides(fill = 'none') +
+  xlab('% of HF reads') +
+  ylab(NULL)
+
+p_groups_layer <- 
+  ggplot(data = collapsed_group_df_reduced %>% mutate(Layer = factor(Layer, levels = rev(levels(Layer))),
+                                              Group = factor(Group, levels = rev(levels(Group)))),
+         aes(y = Layer, x = perc, fill = Group)) +
+    geom_col(color = 'gray20',
+             size = 0.2) +
+  theme_bw() +
+    scale_fill_manual(values = col_list[names(col_list) %in%levels(collapsed_group_df_reduced$Group)],
+                      # guide=guide_legend(reverse=T),
+                      name = '') +
+    theme(legend.position = 'bottom') +
+    ylab(NULL) +
+    xlab('Relative read abundance (%)') +
+  theme(panel.grid = element_blank()) +
+  scale_x_continuous(expand = c(0.01,0.01))
+
+fig1 <- 
+  ( (p_perc_picoeuk + p_shannon_layer) / p_groups_layer ) & 
+  plot_annotation(tag_levels = 'A') & 
+  theme(text = element_text(size = 12),
+        legend.text = element_text(size = 9))
+
+ggsave(filename = 'fig1.pdf',
+       fig1, 
+       height = 6.5,
+       width = 7)
+```
+
+## Figure 3
+
+### A
+
+```{r}
+hf_sf_bcdist <- 
+  divnet_analysis$`bray-curtis`[sample_names(mpn_hf_sf),sample_names(mpn_hf_sf)]
+
+set.seed(123)
+
+sf_ordination <- 
+  pcoa(D = hf_sf_bcdist)
+
+sf_ordination_df <- 
+  as_tibble(sf_ordination$vectors[,1:2], rownames = 'Sample') %>% 
+  mutate(Temp = sample_data(mpn_hf_sf)$Temp)
+
+fig3A <- 
+  ggplot(data = sf_ordination_df,
+         aes(x = Axis.1,
+             y = Axis.2)) +
+  geom_point(aes(fill = Temp),
+             shape= 21,
+             color = 'black',
+             stroke = 0.2,
+             size = 4,
+             alpha= 0.9) +
+  xlab(paste0('Axis 1 [',round(100*sf_ordination$values[1,2],1),'%]')) +
+  ylab(paste0('Axis 2 [',round(100*sf_ordination$values[2,2],1),'%]')) +
+  scale_fill_viridis_c(name = 'Temp (ºC)') +
+  theme(panel.grid = element_blank(),
+        legend.position = 'left',
+        legend.title = element_text(size = 10))
+```
+
+### B
+
+```{r}
+sf_coordinates <- 
+  sample_data(mpn_hf_sf)[,c('lat','long')] %>% 
+  as('data.frame')
+
+sf_stations_geodist <- 
+  geodist(sf_coordinates,
+          measure = 'haversine')/1000 # transform to km
+  
+colnames(sf_stations_geodist) <- rownames(sf_coordinates)
+rownames(sf_stations_geodist) <- rownames(sf_coordinates)
+
+sf_station_bcdist <- 
+  divnet_analysis$`bray-curtis`[colnames(sf_stations_geodist),colnames(sf_stations_geodist)]
+
+sf_stations_merged_dists <- 
+  left_join(melt(sf_station_bcdist, value.name = 'bray_curtis'),
+            melt(sf_stations_geodist, value.name = 'geo_dist')) %>% 
+  filter(Var1 != Var2) %>% # remove comparisons of the same sample
+  as_tibble() %>% 
+  mutate(comparison = map2_chr(as.character(Var1), 
+                               as.character(Var2),
+                               ~paste(sort(c(.x, .y)), 
+                                      collapse = "."))) %>% 
+  select(-Var1,-Var2) %>% 
+  unique()
+
+sf_stations_merged_dists_binned <- 
+  sf_stations_merged_dists %>% 
+  mutate(bin = as.factor(1000*cut_interval(geo_dist,length= 1000,labels = F)))
+
+set.seed(1)
+
+fig3B <- 
+  ggplot(data = sf_stations_merged_dists_binned %>% filter(!bin %in% c(19000,20000)), # remove last 2 bin as they contain less points
+         aes(x = bin,
+             y = bray_curtis)) +
+  geom_jitter(alpha = 0.05, size = 1) +
+  geom_boxplot(outlier.colour = NA,
+               size = 0.3) +
+  ylab('Bray-Curtis dissimilarity') +
+  xlab('Geographical distance (km)') +
+  theme(panel.grid = element_blank()) +
+  scale_x_discrete(breaks = seq(5000,20000,5000),
+                   labels = seq(5000,20000,5000))
+```
+
+### Composite
+
+```{r}
+fig3 <- 
+  (fig3A + fig3B) + plot_annotation(tag_levels = 'A')
+
+ggsave(plot = fig3,
+       filename = 'fig3.pdf',
+       width = 9,
+       height = 4)
+```
+
+
+## Figure S1
+
+```{r}
+world_data <- map_data('world')
+
+world_map <- 
+  ggplot() + 
+  geom_polygon(data = world_data, 
+               mapping = aes(x=long, y = lat, group = group), 
+               fill = 'gray90', color = 'gray90', size = 0.3) + 
+  coord_fixed(1.3,xlim = c(-170,175))
+
+stations_df <- 
+  mpn_hf_dna %>% 
+  sample_data() %>% 
+  as_tibble() %>% 
+  select(Station,lat,long,Dataset,Temp) %>% 
+  unique() %>% 
+  mutate(Dataset = ifelse(Dataset == 'Surface','Surface','Vertical profiles'))
+
+dupl_stations <- 
+  stations_df %>% 
+  group_by(Station) %>% 
+  tally() %>% 
+  filter(n == 2) %>% 
+  pull(Station)
+
+stations_df_modified <- 
+  stations_df %>% 
+  mutate(lat = case_when(Station %in% c(110,120,128,141,39,49,55,63) & Dataset != 'Surface' ~ lat +10,
+                         TRUE ~ lat),
+         long = case_when(Station %in% c(92,96,18) & Dataset != 'Surface' ~ long + 10,
+                          TRUE ~ long),
+         Temp = ifelse(Dataset == 'Vertical profiles',NA,Temp))
+
+figS1 <- 
+  world_map +
+  geom_line(data = stations_df_modified,
+            aes(group = Station,
+                x = long,
+                y = lat),
+            size = 0.2) +
+  geom_point(data = stations_df_modified,
+             aes(fill = Dataset,
+                 shape = Dataset,
+                 x = long,
+                 y = lat),
+             color = 'black',
+             size = 2,
+             stroke = 0.2) +
+  theme(legend.position = 'right',
+        panel.grid = element_line(size = 0.05, color = 'gray80')) +
+  scale_fill_manual(values = viridis(4)[2:3]) +
+  scale_shape_manual(values = c(21, 24)) +
+  # guides(fill = 'none') +
+  xlab('Longitude (º)') +
+  ylab('Latitude (º)')
+
+ggsave(plot = figS1,
+       filename = 'figS1.pdf',
+       width = 10,
+       height = 5)
+```
+
+
+## Figure S3
+
+```{r}
+mpn_dna_df <- 
+  mpn_dna_perc %>%
+  subset_taxa(!Supergroup %in% c('Excavata','Amoebozoa')) %>%
+  subset_taxa(Group != 'Prymnesiophyceae') %>% 
+  psmelt() %>%
+  mutate(final_tax = case_when(Supergroup %in% c('Alveolata',
+                                                 'Archaeplastida') ~ Supergroup,
+                               Group %in% c('InSedEukaryota', 'Cryptomonadales') ~ 'Other',
+                               Group %in% hf_mpn_groups_order ~ 'Heterotrophic flagellates',
+                               Supergroup %in% c('Opisthokonta','Stramenopiles','Rhizaria') ~ paste0('Other',Supergroup))) %>% 
+  group_by(Layer, final_tax) %>% 
+  summarise(total_relabun = sum(Abundance)) %>% 
+  mutate(perc = 100*total_relabun/sum(total_relabun),
+         Layer = factor(Layer, levels = rev(levels(Layer))))
+
+mpn_dna_df$final_tax <- factor(mpn_dna_df$final_tax,
+                               levels = c(
+                                        mpn_dna_df %>%
+                                          filter(final_tax != 'Heterotrophic flagellates') %>% 
+                                          group_by(final_tax) %>% 
+                                          summarise(total = sum(total_relabun)) %>% 
+                                          arrange(total) %>% 
+                                          pull(final_tax),
+                               'Heterotrophic flagellates'))
+
+all_groups_colors <- 
+  c(Alveolata = 'sandybrown',
+    OtherRhizaria = 'plum',
+    Archaeplastida = 'palegreen2',
+    OtherStramenopiles = 'rosybrown1',
+    OtherOpisthokonta = 'peachpuff3',
+    Other = 'lightgoldenrod',
+    `Heterotrophic flagellates` = 'slateblue3')
+
+figS3 <- 
+  ggplot(data = mpn_dna_df,
+           aes(y = Layer, 
+               x = perc, 
+               fill = final_tax)) +
+      geom_col(color = 'gray20',
+               size = 0.2) +
+    theme_bw() +
+      scale_fill_manual(values = all_groups_colors,
+                        name = '',
+                        guide=guide_legend(reverse=T)) +
+      theme(legend.position = 'bottom') +
+      ylab(NULL) +
+      xlab('Relative read abundance (%)') +
+    theme(panel.grid = element_blank())
+
+ggsave(figS3,
+       filename = 'figS3.pdf',
+       height = 5,
+       width = 8)
+```
+
+
+## Figure S4
+
+```{r}
+stations_order <- 
+  sample_data(mpn_hf_dna) %>% 
+  as('data.frame') %>% 
+  select(Station) %>% 
+  arrange(Station) %>% 
+  pull() %>% 
+  unique() %>% 
+  factor(., levels = c(.[101:118],.[1:100]))
+
+sf_group_df <- 
+  hf_sf_perc %>% 
+  psmelt() %>% 
+  group_by(Sample, Station, Dataset, Layer, Depth,Sub_ocean, Group) %>% 
+  summarise(relabun = sum(Abundance)) %>% 
+  mutate(Dataset = case_when(Dataset == 'Surface' ~ 'SF',
+                             TRUE ~ 'VP'),
+         Group = factor(Group, levels = hf_mpn_groups_order),
+         Label = paste0(Station,' ',Dataset),
+         Station = factor(Station, levels = levels(stations_order))) %>%
+  arrange(Station) %>% 
+  mutate(Label = factor(Label, levels = unique(.$Label)))
+
+sf_group_df_hm <- 
+  sf_group_df %>% 
+  ungroup() %>% 
+  mutate(Group = factor(Group, levels = rev(levels(Group)))) %>% 
+  mutate(log10relabun = log10(relabun))
+
+figS4 <- 
+  ggplot(data = sf_group_df_hm,
+         aes(x = Label,
+             y = Group)) +
+  geom_tile(aes(fill = log10relabun)) +
+  scale_fill_viridis(na.value = NA,
+                     name = "log<sub>10</sub>(relative<br>read abundance)",
+                     option = 'inferno') +
+  xlab(NULL) +
+  ylab(NULL) +
+  facet_grid(~Sub_ocean,
+             scales = 'free',
+             space = 'free') +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 5),
+        panel.grid = element_blank(),
+        legend.title = element_markdown(),
+        strip.background = element_blank(),
+        legend.position = 'bottom')
+
+ggsave(plot = figS4,
+       filename = 'figS4.pdf',
+       height = 5,
+       width = 12)
+```
+
+
+## Figure S5
+```{r}
+vp_group_df <- 
+  hf_vp_dna_perc %>% 
+  psmelt() %>% 
+  group_by(Sample, Station, Sub_ocean, Depth, Layer, Group) %>% 
+  summarise(relabun = sum(Abundance)) %>% 
+  arrange(Depth) %>% 
+  mutate(Group = factor(Group, levels = hf_mpn_groups_order),
+         Depth = factor(Depth, levels = unique(.$Depth)),
+         Station = factor(Station, levels = levels(stations_order)))
+
+vp_group_df_reduced <- 
+  hf_vp_dna_perc %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>%
+  mutate(Group = ifelse(Group %in% hf_mpn_groups_order[1:num_groups_to_show], Group, 'Other')) %>% 
+  group_by(Sample, Station, Sub_ocean, Depth, Layer, Group) %>% 
+  summarise(total_relabun = sum(Abundance)) %>% 
+  arrange(Depth) %>% 
+  mutate(perc = 100*total_relabun/sum(total_relabun),
+         Group = factor(Group, levels = c(hf_mpn_groups_order[1:num_groups_to_show],'Other')),
+         Depth = factor(Depth, levels = unique(.$Depth)),
+         Station = factor(Station, levels = levels(stations_order)))
+
+figS5 <-
+  ggplot(data = vp_group_df_reduced,
+         aes(x = Depth,
+             y = perc,
+             fill = Group)) +
+  geom_col(color = 'black',
+           size = 0.05) +
+  ggh4x::facet_nested(~Sub_ocean + Station,
+             scales = 'free',
+             space = 'free') +
+  scale_fill_manual(values = col_list[names(col_list) %in% levels(vp_group_df_reduced$Group)]) +
+  xlab('Depth (m)') +
+  ylab('Relative read abundance (%)') +
+  theme(strip.background = element_rect(fill = NA),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        legend.position = 'bottom') +
+  scale_y_continuous(expand = c(0.01,0.01))
+
+ggsave(figS5, 
+       height = 10, 
+       width = 20, 
+       filename = 'figS5.pdf')
+```
+
+
+## Table S3
+
+```{r}
+total_asvs_extract_and_group <- 
+  mpn_hf %>% 
+  psmelt() %>% 
+  group_by(Group, Supergroup, Extract, OTU) %>%
+  summarise(total = sum(Abundance)) %>% 
+  spread(Extract, total, fill = 0) %>% 
+  mutate(comp = case_when(DNA == 0 & RNA != 0 ~ 'RNA',
+                          DNA != 0 & RNA == 0 ~ 'DNA',
+                          DNA != 0 & RNA != 0 ~ 'Shared')) %>% 
+  group_by(comp, .add = T) %>%
+  summarise(ASVs = n_distinct(OTU)) %>% 
+  spread(comp, 
+         ASVs,
+         fill = 0) %>% 
+  mutate(Total = Shared+DNA+RNA)
+
+total_asvs_group_prevalence <- 
+  mpn_hf %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  group_by(Group, Layer2) %>%
+  summarise(g_prev = round(100*sum(Abundance > 0)/n_distinct(Sample),1)) %>% 
+  spread(Layer2, g_prev, fill = 0)
+
+order_groups <- 
+  c("Ancyromonadida", 
+    "Apusomonadida", 
+    "Bicosoecida", 
+    "Cantina", 
+    "Centrohelida", 
+    "Cercozoa", 
+    "Choanomonada", 
+    "Chrysophyceae", 
+    "Dictyochophyceae", 
+    "Katablepharidae", 
+    "MAST-1", 
+    "MAST-2",  
+    "MAST-3", 
+    "MAST-4", 
+    "MAST-7", 
+    "MAST-8", 
+    "MAST-9",     
+    "MAST-10", 
+    "MAST-11", 
+    "MAST-12", 
+    "MAST-25", 
+    "InSedMAST", 
+    "MOCH-4", 
+    "Picozoa", 
+    "Telonemia")
+
+tableS3 <- 
+  left_join(total_asvs_extract_and_group,
+            total_asvs_group_prevalence) %>% 
+  mutate(Group = factor(Group, level = order_groups)) %>% 
+  arrange(Group)
+```
+
+## Table S4
+
+### A. Surface
+
+```{r}
+permanova_variables_sf <-
+  c('Temp','Sub_ocean','Cond','Ox_mL_L','Fluo','Sal')
+
+samples_with_na_var_sf <- 
+  sample_data(mpn_hf_sf)[,permanova_variables_sf] %>% 
+  is.na() %>% 
+  rowSums() %>% 
+  .[.>0] %>% 
+  names()
+
+hf_sf_nona <- 
+  mpn_hf_sf %>% 
+  prune_samples(samples = !sample_names(.) %in% samples_with_na_var_sf)
+
+metadata_sf <- 
+  sample_data(hf_sf_nona)[,permanova_variables_sf] %>% 
+  as('data.frame')
+
+dist_matrix_sf <- 
+  hf_sf_bcdist[sample_names(hf_sf_nona),sample_names(hf_sf_nona)]
+
+permanova_sf <- 
+  adonis(dist_matrix_sf ~ ., metadata_sf)
+```
+
+### B. Vertical profiles
+
+```{r}
+permanova_variables_vp <-
+  c('Layer','Temp','Sub_ocean','Cond','Ox_mL_L','Fluo','Sal')
+
+samples_with_na_var_vp <- 
+  sample_data(mpn_hf_vp_dna)[,permanova_variables_vp] %>% 
+  is.na() %>% 
+  rowSums() %>% 
+  .[.>0] %>% 
+  names()
+
+hf_vp_dna_nona <- 
+  mpn_hf_vp_dna %>% 
+  prune_samples(samples = !sample_names(.) %in% samples_with_na_var_vp)
+
+metadata_vp <- 
+  sample_data(hf_vp_dna_nona)[,permanova_variables_vp] %>% 
+  as('data.frame')
+
+dist_matrix_vp <- 
+  divnet_analysis$`bray-curtis`[sample_names(hf_vp_dna_nona),sample_names(hf_vp_dna_nona)]
+
+permanova_vp <- 
+  adonis(dist_matrix_vp ~ ., metadata_vp)
+```
+
+### C. Aphotic layers
+
+```{r}
+permanova_variables_ap <-
+  c('Layer','Temp','Sub_ocean','Cond','Ox_mL_L','Fluo','Sal')
+
+water_masses <- 
+  read_tsv('../other/mpn_water_masses_43samples.txt')
+
+mpn_hf_ap_dna <-
+  mpn_hf_vp_dna %>%
+  subset_samples(Layer2 == 'Aphotic')
+
+samples_with_na_var_ap <-
+  sample_data(mpn_hf_ap_dna)[,permanova_variables_ap] %>%
+  as('data.frame') %>% 
+  rownames_to_column('Sample') %>% 
+  left_join(water_masses) %>% 
+  column_to_rownames('Sample') %>% 
+  is.na() %>%
+  rowSums() %>%
+  .[.>0] %>%
+  names()
+
+hf_ap_dna_nona <-
+  mpn_hf_ap_dna %>%
+  prune_samples(samples = !sample_names(.) %in% samples_with_na_var_ap)
+
+metadata_ap <-
+  sample_data(hf_ap_dna_nona)[,permanova_variables_ap] %>%
+  as('data.frame') %>% 
+  rownames_to_column('Sample') %>% 
+  left_join(water_masses) %>% 
+  select(`Water mass`, everything()) %>% 
+  column_to_rownames('Sample')
+
+dist_matrix_ap <-
+  divnet_analysis$`bray-curtis`[sample_names(hf_ap_dna_nona),sample_names(hf_ap_dna_nona)]
+
+permanova_ap <-
+  adonis(dist_matrix_ap ~ ., metadata_ap)
+```
+

@@ -1,0 +1,504 @@
+---
+title: "Network analyses within HF and with prokaryotes"
+author: "Aleix Obiol"
+date: "12/28/2020"
+output: html_document
+---
+
+# Load auxiliary functions and specific packages
+
+```{r}
+source('aux_functions.R')
+library(tidygraph)
+library(ggraph)
+library(ComplexHeatmap)
+```
+
+# Load phyloseq objects
+
+```{r}
+mpn_hf_sf <- 
+  readRDS('../tables/MPN_18S_HF_DNA_SF.phy')
+
+mpn_prok_sf <- 
+  readRDS('../tables/MPN_16S_SF.phy') %>% 
+  prune_samples(samples = sample_names(mpn_hf_sf))
+
+mpn_dna <- 
+  readRDS('../tables/MPN_18S_DNA.phy')
+
+mpn_hf_sf_top52 <- 
+  readRDS('../tables/MPN_18S_HF_SF_DNA_top52.phy')
+
+coeffs_corncob_sf_asv <- 
+  readRDS('../analysis/corncob_sf_hf.rds')
+
+coeffs_corncob_sf_asv_prok <- 
+  readRDS('../analysis/corncob_sf_prok.rds')
+```
+
+# Create objects for `fastSpar`
+
+```{r}
+min_reads <- 100
+min_prev <- 10
+
+prev_hf <- 
+  taxa_sums(otu_table(mpn_hf_sf) > 0) >= min_prev
+
+prev_prok <- 
+  taxa_sums(otu_table(mpn_prok_sf) > 0) >= min_prev
+
+hf_sf_otutab <- 
+  mpn_hf_sf %>% 
+  subset_samples(Dataset == 'Surface') %>% # avoid having samples from the same station
+  prune_taxa(taxa = prev_hf) %>% 
+  prune_taxa(taxa = taxa_sums(.) >= min_reads) %>% 
+  otu_table() %>% 
+  as.data.frame() %>% 
+  rownames_to_column('#OTU ID')
+
+hf_prok_sf_otutab <- 
+  mpn_prok_sf %>% 
+  prune_taxa(taxa = taxa_sums(.) >= min_reads) %>% 
+  otu_table() %>% 
+  as.data.frame() %>% 
+  rownames_to_column('#OTU ID') %>% 
+  bind_rows(hf_sf_otutab[,colnames(.)])
+```
+
+# Environmental parameters
+
+```{r}
+env_params <- 
+  mpn_hf_sf %>% 
+  sample_data() %>% 
+  .[colnames(hf_prok_sf_otutab)[-1],] %>% 
+  as('data.frame') %>%  
+  rownames_to_column('Sample') %>% 
+  select(Sample, Temp, Fluo, Cond, Ox_mL_L)
+```
+
+# Unified taxonomy and corncob results
+
+```{r}
+corncob_prokhf_sf_temp <- 
+  bind_rows(coeffs_corncob_sf_asv,
+            coeffs_corncob_sf_asv_prok) %>% 
+  filter(!par %in% c('Sal','Sub_ocean')) %>% 
+  select(name = asv, estimate, par) %>% 
+  pivot_wider(names_from = par,
+              values_from = estimate) %>% 
+  rename_with(.cols = -name, ~ paste0('cc.',.x))
+
+selected_prok_groups <- 
+  c("Actinomarinales", "SAR86", "Flavobacteriales", "Prochlorococcus", "Rhodobacterales", "SAR11", "SAR116")
+
+tax_prok_simplified <- 
+  read_tsv('~/Desktop/tax_prok_simplified.txt') %>% 
+  mutate(net_name = ifelse(`LEVEL-2` %in% selected_prok_groups, `LEVEL-2`,'Other'),
+         net_name = factor(net_name, levels = c(selected_prok_groups,'Other'))) %>% 
+  select(-contains('Consensus'))
+
+tax_corncob_unified <- 
+  tax_table(mpn_hf_sf) %>% 
+  as.data.frame() %>% 
+  as_tibble(rownames = 'name') %>% 
+  select(name, SPECIES_NAME, 'LEVEL-1' = Supergroup, 'LEVEL-2' = Group) %>% 
+  bind_rows(tax_prok_simplified) %>% 
+  left_join(corncob_prokhf_sf_temp) %>% 
+  mutate(diffTemp = case_when(cc.Temp > 0.5 ~ 'up',
+                              cc.Temp < -0.5 ~ 'down',
+                              TRUE ~ 'ns'))
+```
+
+# Import `fastSpar` results and build tidygraph object
+
+```{r}
+prokhf_sf_corr <-
+  read_tsv('../correlations/sf_prokhf_corr_v2.txt') %>% 
+  column_to_rownames('#OTU ID') %>%
+  as.matrix()
+  
+prokhf_sf_pval <- 
+  read_tsv('../correlations/sf_prokhf_pvalues_v2.tsv') %>% 
+  column_to_rownames('#OTU ID') %>%
+  as.matrix()
+
+corr_prokhf_sf_df <- 
+  flattenCorrMatrix(cormat = prokhf_sf_corr ,
+                  pmat = prokhf_sf_pval) %>% 
+  filter(p <= 0.01)
+
+graph_prokhf_raw <- 
+  corr_prokhf_sf_df %>% 
+  mutate(assoc_type = case_when(grepl('prok',row) & grepl('prok',column) ~ 'prok',
+                                grepl('prok',row) | grepl('prok',column) ~ 'prok-hf',
+                                TRUE ~ 'hf'),
+         assoc_sign = if_else(cor > 0, 'positive','negative')) %>% 
+  as_tbl_graph(directed = FALSE) %>% 
+  left_join(tax_corncob_unified) %>% 
+  mutate(domain = if_else(grepl('prok',name), 'prok','euk'))
+
+hf_node_indexes <- 
+  graph_prokhf_raw %>% 
+  as_tibble() %>% 
+  mutate(index = row_number()) %>% 
+  filter(domain == 'euk') %>% 
+  pull(index)
+
+graph_prokhf <- # remove nodes not connected to an HF
+  graph_prokhf_raw %>% 
+  filter(node_is_adjacent(hf_node_indexes))
+```
+
+# Create objects for EnDED
+
+## Prepare ASV-ENV edges
+
+```{r}
+# colnames(env_params)[-1] %>% 
+#   walk(.x = .,
+#        .f = ~ tibble(Source = graph_prokhf %>% pull(name), 
+#                      Target = paste0('ENV_',.x)) %>% 
+#          write_tsv(paste0('../correlations/EnDED/ASV_ENV_',.x,'.txt')))
+```
+
+## Prepare ASV-ASV edges
+
+```{r}
+graph_prokhf_names <- 
+  graph_prokhf %>% 
+  pull(name)
+
+nw_for_ended <-
+  graph_prokhf %>%
+  activate(edges) %>%
+  as_tibble() %>%
+  mutate(Source = graph_prokhf_names[from],
+         Target = graph_prokhf_names[to]) %>%
+  select(Source,Target)
+
+# write_tsv(nw_for_ended, '../correlations/EnDED/NW.txt')
+```
+
+## Prepare counts and metadata tables
+
+```{r}
+# hf_prok_sf_otutab %>% 
+#   rename('abundance' = '#OTU ID') %>% 
+#   write_tsv('../correlations/EnDED/ASV_Counts_sizefilter.txt')
+# 
+# env_params %>% 
+#   column_to_rownames('Sample') %>% 
+#   t() %>% 
+#   as_tibble(rownames = 'abundance') %>% 
+#   mutate(abundance = paste0('ENV_',abundance)) %>% 
+#   write_tsv('../correlations/EnDED/ENV.txt')
+```
+
+# Import EnDED tables
+
+After running `ended.sh`.
+
+```{r}
+nw <- 
+  graph_prokhf %>% 
+  activate(edges) %>% 
+  as_tibble() %>% 
+  mutate(Source = graph_prokhf_names[from],
+         Target = graph_prokhf_names[to]) %>% 
+  select(Source, Target, everything(), -from,-to)
+
+nw_coOcc <- 
+  read_tsv('../correlations/EnDED/NW_CoOcc.tsv') %>% 
+  select(-num_Triplets)
+
+env_nw_paths <- 
+  list.files('../correlations/EnDED/',
+             pattern = '^NW_ENV_',
+             full.names = T)
+
+indirect_edges <- 
+  env_nw_paths %>% 
+  map_df(.x = .,
+         .f = ~ read_tsv(.x) %>% 
+           filter(COMBI_II_DPI == 0) %>%
+           mutate(indirect = TRUE) %>% 
+           select(Source,
+                  Target,
+                  indirect)) %>% 
+  unique()
+
+graph_prokhf_filtered_0 <-
+  nw %>% 
+  left_join(nw_coOcc) %>% 
+  left_join(indirect_edges) %>% 
+  mutate(indirect = if_else(is.na(indirect), FALSE, indirect)) %>% 
+  filter(indirect == FALSE,
+         
+         p <= 0.001,
+         percentage_co_occurrence >= 25,
+         cor >= 0.3) %>% 
+  as_tbl_graph(directed = FALSE) %>% 
+  left_join(tax_corncob_unified) %>% 
+  mutate(domain = if_else(grepl('prok',name), 'prok','euk'),
+         diffTemp = if_else(is.na(diffTemp),'ns',diffTemp),
+         temp_resp = paste0(domain,'_',diffTemp),
+         temp_resp = factor(temp_resp, levels = c(paste0('euk_',c('up','down')),
+                                                  paste0('prok_',c('up','down')),
+                                                  'euk_ns',
+                                                  'prok_ns')),
+         centrality = centrality_authority())
+
+hf_node_indexes_filtered <- 
+  graph_prokhf_filtered_0 %>% 
+  as_tibble() %>% 
+  mutate(index = row_number()) %>% 
+  filter(domain == 'euk') %>% 
+  pull(index)
+
+graph_prokhf_filtered <- 
+  graph_prokhf_filtered_0 %>% 
+  filter(node_is_adjacent(hf_node_indexes_filtered)) %>% 
+  filter(!node_is_isolated())
+```
+
+# Figure 5
+
+## A
+
+```{r}
+plotter_temp <- function(df){
+  ggraph(df, layout = 'stress') +
+  scale_edge_width_continuous(range=c(0.1,1.5), name = 'Correlation') +
+  theme_graph(base_family = 'Helvetica') +
+  guides(edge_width = 'none',
+         shape=guide_legend(override.aes=list(size = 3))) +
+  scale_shape_manual(values = c(21, 24)) +
+  guides(fill=guide_legend(override.aes=list(shape=21))) +
+  geom_edge_link0(alpha = 0.03) +
+  geom_node_point(aes(fill = temp_resp, 
+                      shape = domain,
+                      color = temp_resp,
+                      size = domain),
+                  stroke = 0.2) +
+  guides(node_size = 'none') +
+  scale_fill_manual(values = c(euk_up = 'firebrick',
+                               euk_down = 'royalblue',
+                               euk_ns = 'gray80',
+                               prok_down = '#66CDAA',
+                               prok_up = '#FFB90F',
+                               prok_ns = 'gray80'),
+                    name = 'Temperature response') +
+  scale_color_manual(values = c(euk_up = 'gray20',
+                                euk_down = 'gray20',
+                                euk_ns = 'gray70',
+                                prok_down = 'gray20',
+                                prok_up = 'gray20',
+                                prok_ns = 'gray70')) +
+  scale_size_manual(values = c(euk = 2.5, prok = 1.7)) +
+  guides(color = 'none',
+         size = 'none')
+}
+
+fig5A <- 
+  plotter_temp(graph_prokhf_filtered)
+```
+
+## B
+
+```{r}
+top52_indexes <- 
+  graph_prokhf_filtered %>% 
+  mutate(index = row_number()) %>% 
+  filter(name %in% taxa_names(mpn_hf_sf_top52)) %>% 
+  pull(index)
+
+graph_prok_top52_all <- 
+  graph_prokhf_filtered %>% 
+  filter(node_is_adjacent(top52_indexes)) %>% 
+  mutate(top52 = case_when(name %in% taxa_names(mpn_hf_sf_top52) ~ 'include', 
+                           domain == 'euk' ~ 'exclude',
+                           TRUE ~ 'include'))
+
+graph_prok_top52_filtered_0 <- 
+  graph_prok_top52_all %>% 
+  filter(top52 == 'include') %>% 
+  activate(edges) %>% 
+  filter(cor > 0.5) %>% 
+  filter(assoc_type != 'hf') %>% 
+  activate(nodes) %>% 
+  filter(!node_is_isolated())
+
+top52_indexes_filt <- 
+  graph_prok_top52_filtered_0 %>% 
+  mutate(index = row_number()) %>% 
+  filter(name %in% taxa_names(mpn_hf_sf_top52)) %>% 
+  pull(index)
+
+graph_prok_top52_filtered <- 
+  graph_prok_top52_filtered_0 %>% 
+  filter(node_is_adjacent(top52_indexes_filt))
+
+set.seed(10)
+
+graph <- 
+  create_layout(graph_prok_top52_filtered, layout = 'fr', maxiter = 10000)
+
+fig5B <- 
+  ggraph(graph) +
+  scale_edge_width_continuous(range=c(0.1,1.5), name = 'Correlation') +
+  theme_graph(base_family = 'Helvetica') +
+  guides() +
+  scale_shape_manual(values = c(21, 24),
+                     name = 'Domain',
+                    limits = c('euk','prok'),
+                    labels = c('Hetetrotrophic\nflagellates','Prokaryotes')) +
+  guides(fill=guide_legend(override.aes=list(shape=24, size = 3)),
+         shape=guide_legend(override.aes=list(size = 3))) +
+  geom_edge_link0(aes(alpha = assoc_type)) +
+  geom_node_point(aes(shape = domain,
+                  color = domain,
+                  size = domain),
+              stroke = 0.2,
+              fill = 'white') + 
+  geom_node_point(aes(fill = net_name, 
+                      shape = domain,
+                      color = domain,
+                      size = domain),
+                  stroke = 0.2) +
+
+  guides(node_size = 'none') +
+  scale_fill_viridis_d(option = 'turbo',
+                     name = 'Prokaryotic taxa',
+                     na.translate = F) +
+  scale_color_manual(values = c(euk = 'black',
+                                prok = 'gray20')) +
+  # scale_size_manual(values = c(euk = 4, prok = 3)) +
+  scale_size_manual(values = c(euk = 2, prok = 3)) +
+  scale_edge_alpha_manual(values = c(`prok-hf` = 0.12, `prok` = 0.03)) +
+  guides(color = 'none',
+         alpha = 'none',
+         size = 'none',
+         node_size = 'none',
+         edge_width = 'none',
+         edge_alpha = 'none')
+```
+
+## AB
+
+```{r}
+fig5AB <- 
+  fig5A / 
+  fig5B +
+  plot_layout(heights = c(1,1)) +
+  plot_annotation(tag_levels = 'A')
+
+ggsave(plot = fig5AB,
+       filename = 'fig5AB.pdf',
+       width = 9,
+       height = 11)
+```
+
+## C
+
+```{r}
+names_nodes_all <- 
+  graph_prok_top52_filtered %>% 
+  pull(name)
+
+matrix_heatmap_all <- 
+  graph_prokhf_filtered %>% 
+  filter(name %in% names_nodes_all) %>% 
+  activate(edges) %>% 
+  as_tibble() %>% 
+  mutate(to = names_nodes_all[to],
+         from = names_nodes_all[from]) %>% 
+  filter(assoc_type == 'prok-hf') %>% 
+  select(from,to, cor) %>% 
+  pivot_wider(names_from = to,
+              values_from = cor,
+              values_fill = 0) %>% 
+  column_to_rownames('from')
+
+euk_data <- 
+  tax_corncob_unified %>% 
+  column_to_rownames('name') %>% 
+  .[colnames(matrix_heatmap_all),] %>% 
+  rownames_to_column('name') %>% 
+  column_to_rownames('SPECIES_NAME') %>% 
+  select(name, contains('cc.'))
+
+colnames(matrix_heatmap_all) <- rownames(euk_data)
+
+prokASV13_tax <- 
+  mpn_prok_sf %>% 
+  prune_taxa(taxa = 'prokASV_13') %>% 
+  tax_table() %>% 
+  as.data.frame()
+
+prok_data <- 
+  tax_corncob_unified %>% 
+  mutate(id = str_remove(pattern = '.*ASV_', string = name),
+         `LEVEL-1` = if_else(id == 13, prokASV13_tax$Phylum_SILVA132,`LEVEL-1`),
+         `LEVEL-2` = if_else(id == 13, '-', `LEVEL-2`),
+         `LEVEL-2` = if_else(`LEVEL-2` == 'Marine_Group_II','Marine Group II', `LEVEL-2`)) %>% 
+  column_to_rownames('name') %>% 
+  .[rownames(matrix_heatmap_all),] %>% 
+  select(id, contains('LEVEL'),contains('cc.')) 
+
+estimate_euk_all <- 
+  columnAnnotation(df = euk_data %>% select(cc.Temp),
+                col = list(cc.Temp = circlize::colorRamp2(c(-2, -1, 0, 1, 2),
+                                                           c('royalblue','royalblue','white','firebrick','firebrick'))),
+                gp = gpar(col = 'white', lwd = 0.2),
+                show_annotation_name = c(cc.Temp = FALSE),
+                show_legend = c(cc.Temp = FALSE))
+
+estimate_prok_all <-
+  rowAnnotation(df = prok_data %>% select(cc.Temp),
+                col = list(cc.Temp = circlize::colorRamp2(c(-2, -1, 0, 1, 2),
+                                                           c('royalblue','royalblue','white','firebrick','firebrick'))),
+                gp = gpar(col = 'white', lwd = 0.2),
+                show_annotation_name = c(cc.Temp = FALSE),
+                annotation_legend_param =  list(
+                  direction = 'vertical',
+                                                title = 'Temperature\nestimate'))
+
+names_prok_all <- 
+  rowAnnotation(
+    id = anno_text(paste0(prok_data$id,' /'),
+                   gp = gpar(fontsize = 7),
+                   just = 'right',
+                   location = 1),
+    l2 = anno_text(prok_data$`LEVEL-2`,
+                   gp = gpar(fontsize = 9)),
+    # l1 = anno_text(prok_data$`LEVEL-1`,
+    #                gp = gpar(fontsize = 9)),
+    gap = unit(3,'mm'))
+
+fig5C <- 
+ Heatmap(matrix = matrix_heatmap_all,
+         show_row_names = FALSE,
+         col = c('gray80',viridis(option = 'turbo',n = 100)),
+         left_annotation = estimate_prok_all,
+         right_annotation = names_prok_all,
+         top_annotation = estimate_euk_all,
+         column_names_gp = gpar(fontsize = 9),
+         rect_gp = gpar(col = 'white', lwd = 0.2),
+         column_names_rot = 45,
+         name = 'correlation',
+         heatmap_legend_param = list(
+           # direction = 'horizontal', 
+           title = 'Correlation'),
+         # clustering_method_columns = 'centroid',
+         # clustering_method_rows = 'centroid',
+         )
+
+pdf('fig5C.pdf',
+    height = 10,
+    width = 8)
+print(fig5C)
+dev.off()
+```

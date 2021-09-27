@@ -1,0 +1,354 @@
+---
+title: "Validation with RNA and mTags"
+author: "Aleix Obiol"
+date: "12/28/2020"
+output: html_document
+---
+
+# Load auxiliary functions and specific packages
+
+```{r}
+source('aux_functions.R')
+```
+
+# Load phyloseq objects and other tables
+
+```{r}
+mpn_ps <- 
+  readRDS('../tables/MPN_18S.phy')
+
+mpn_hf <- 
+  readRDS('../tables/MPN_18S_HF.phy')
+
+mpn_hf_dna <- 
+  readRDS('../tables/MPN_18S_HF_DNA.phy')
+
+mpn_hf_rna <- 
+  readRDS('../tables/MPN_18S_HF_RNA.phy')
+
+mpn_hf_sf_top52 <- 
+  readRDS('../tables/MPN_18S_HF_SF_DNA_top52.phy')
+
+mpn_mtags <- 
+  readRDS('../tables/MPN_VP_mTags.phy')
+
+mpn_mtags_pico <- 
+  mpn_mtags %>% 
+  subset_samples(Fraction == 'Pico') %>% 
+  subset_samples(!is.na(Layer)) %>%
+  prune_taxa(taxa = taxa_sums(.) > 0)
+
+mpn_mtags_pico_ps <- 
+  mpn_mtags %>% 
+  subset_samples(Fraction == 'Pico') %>% 
+  subset_samples(!is.na(Layer)) %>%
+  prune_taxa(taxa = taxa_sums(.) > 0)
+
+mpn_v9_hf <- 
+  readRDS('../tables/MPN_VP_V9_HF.phy')
+
+tara_hf <- 
+  readRDS('../tables/TARA_HF.phy')
+
+order_fct_groups <- 
+  readRDS('../other/hf_groups_fct_order.rds')
+
+col_list <- 
+  readRDS('../other/group_colors.rds')
+
+colors_extracts <- 
+  c(DNA = '#72CF91',
+    RNA = '#E0931D',
+    Both = '#7407E0')
+```
+
+# Create RNA comparable objects
+
+```{r}
+common_samples <- 
+  intersect(str_remove(sample_names(mpn_hf_dna),'^D'),
+            str_remove(sample_names(mpn_hf_rna),'^R'))
+
+mpn_hf_dna_comp <- 
+  mpn_hf_dna %>% 
+  prune_samples(samples = gsub('^','D',common_samples)) %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+
+mpn_hf_rna_comp <- 
+  mpn_hf_rna %>% 
+  prune_samples(samples = gsub('^','R',common_samples)) %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+
+mpn_hf_extracts <- 
+  merge_phyloseq(mpn_hf_dna_comp, mpn_hf_rna_comp)
+  
+mpn_hf_extracts_gmpr <-
+  mpn_hf_extracts %>% 
+  gmpr_norm()
+
+mpn_hf_extracts_perc <- 
+  mpn_hf_extracts %>% 
+  transform_sample_counts(percentage)
+
+mpn_rna <- 
+  mpn_ps %>% 
+  subset_samples(Extract == 'RNA') %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+
+mpn_rna_perc <- 
+  mpn_rna %>% 
+  transform_sample_counts(percentage)
+
+mpn_extracts <- 
+  mpn_ps %>% 
+  prune_samples(samples = sample_names(mpn_hf_extracts)) %>% 
+  prune_taxa(taxa = taxa_sums(.) > 0)
+```
+
+# Figure S6
+
+```{r}
+extract_summary_all <- 
+  psmelt(mpn_hf) %>% 
+  rename(ASVid = OTU) %>% 
+  group_by(ASVid, Extract) %>% 
+  summarise(total = sum(Abundance)) %>% 
+  spread(Extract, total, fill = 0) %>% 
+  mutate(comp = case_when(DNA == 0 & RNA != 0 ~ 'RNA only',
+                          DNA != 0 & RNA == 0 ~ 'DNA only',
+                          DNA != 0 & RNA != 0 ~ 'In both'),
+         sum = DNA + RNA,
+         comp = factor(comp, levels = c('RNA only','DNA only','In both'))) 
+
+ext_sum_to_plot_all <- 
+  extract_summary_all %>% 
+  group_by(comp) %>% 
+  summarise(reads = sum(sum), asvs = n()) %>% 
+  mutate(perc = 100*reads/sum(reads))
+
+ext_sum_to_plot2_all <- 
+  extract_summary_all %>% 
+  group_by(comp) %>% 
+  summarise(DNA = sum(DNA),
+            RNA = sum(RNA)) %>% 
+  gather(Extract, Reads, c(DNA,RNA)) %>% 
+  group_by(Extract) %>% 
+  mutate(perc = 100*Reads/sum(Reads),
+         Extract = ifelse(Extract == 'DNA',
+                          'DNA dataset',
+                          'RNA dataset'))
+
+names(colors_extracts) <- c('DNA only','RNA only','In both')
+
+figS6A <- 
+  ggplot(data = ext_sum_to_plot_all,
+         aes(x = asvs,y = fct_relevel(comp, c('In both','RNA only','DNA only')))) +
+  geom_col(aes(fill = comp),
+           color = 'gray20',
+           size = 0.3) +
+  theme_minimal() +
+  scale_fill_manual(values = colors_extracts) + 
+  ylab(NULL) +
+  xlab('Number of ASVs')
+
+figS6B <- 
+  ggplot(data = ext_sum_to_plot2_all,
+         aes(x = perc,y = fct_relevel(Extract, c('RNA dataset','DNA dataset')))) +
+  geom_col(aes(fill = comp),
+           color = 'gray20',
+           width = 0.66,
+           size = 0.3) +
+  theme_minimal() +  
+  scale_fill_manual(values = colors_extracts) + 
+  ylab(NULL) +
+  xlab('Percentage of reads (%)')
+
+figS6 <- 
+  (figS6A /
+  figS6B) & guides(fill = 'none') &
+  plot_annotation(tag_levels = 'A')
+
+ggsave(plot = figS6,
+       filename = 'figS6.pdf',
+       height = 4,
+       width = 8)
+```
+
+# Figure S7
+
+```{r}
+sf_dna_top52 <- 
+  mpn_hf_sf_top52 %>% 
+  taxa_names()
+
+mpn_hf_extracts_sf <- 
+  mpn_hf_extracts %>% 
+  subset_samples(Layer == 'Surface')
+
+mpn_hf_extracts_sf_summary <- 
+  mpn_hf_extracts_sf %>% 
+  transform_sample_counts(percentage) %>% 
+  psmelt() %>% 
+  as_tibble() %>% 
+  group_by(Extract, OTU) %>% 
+  summarise(Total = sum(Abundance)) %>% 
+  arrange(-Total) %>% 
+  mutate(cumulative = cumsum(100*Total/sum(Total)),
+         top52 = ifelse(OTU %in% sf_dna_top52,'Yes','No'))
+
+hf_sf_top52 <- 
+  mpn_hf_extracts_sf_summary %>% 
+  filter(top52 == 'Yes') %>% 
+  pivot_wider(names_from = Extract, values_from = c('Total','cumulative'))
+
+figS7A <- 
+  ggplot(hf_sf_top52, aes(x = Total_DNA, y = Total_RNA)) + 
+  geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red') +
+  geom_point() +
+  xlim(0,150) +
+  ylim(0,150) +
+  scale_x_log10() + 
+  scale_y_log10() +
+  xlab(expression(paste(log[10],"(Total DNA relative abundance (%))"))) +
+  ylab(expression(paste(log[10],"(Total RNA relative abundance (%))")))
+
+mpn_hf_extracts_sf_top52 <- 
+  mpn_hf_extracts_sf %>% 
+  transform_sample_counts(percentage) %>% 
+  prune_taxa(taxa = sf_dna_top52) %>% 
+  psmelt() %>% 
+  as_tibble() %>% 
+  select(ASVid = OTU,
+         Station,
+         Extract,
+         Abundance) %>% 
+  spread(Extract, Abundance)
+
+figS7B <- 
+  ggplot(data = mpn_hf_extracts_sf_top52,
+         aes(x = DNA, y = RNA)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red') +
+  xlim(0,150) +
+  ylim(0,150) +
+  scale_x_log10(labels = function(x) sprintf("%g", x)) +
+  scale_y_log10(labels = function(x) sprintf("%g", x)) +
+  xlab(expression(paste(log[10],"(DNA relative abundance (%))"))) +
+  ylab(expression(paste(log[10],"(RNA relative abundance (%))")))
+
+figS7 <- 
+  figS7A +
+  figS7B + 
+  plot_annotation(tag_levels = 'A')
+
+ggsave(plot = figS7,
+       filename = 'figS7.pdf',
+       height = 5,
+       width = 10)
+```
+
+# Figure 2
+
+Merged levels for legend and colors
+
+```{r}
+merged_group_colors <- 
+  c(Diplonemea = 'orange',
+    Kinetoplastida = 'tan3',
+    col_list[!names(col_list) %in% c('Dictyochophyceae','InSedMAST','Cercozoa')],
+    `MAST-22`= 'grey20',
+    Other = 'gray60')
+
+merged_group_levels <- 
+  names(merged_group_colors)
+```
+
+Collapser function
+
+```{r}
+reduce_groups_to_plot <- function(df,n_groups = 14){
+  df %>% 
+    mutate(Group = ifelse(Group %in% merged_group_levels[1:n_groups], Group, 'Other')) %>% 
+    group_by(Layer, Group) %>% 
+    summarise(total_relabun = sum(Abundance)) %>%
+    mutate(perc = 100*total_relabun/sum(total_relabun),
+           Group = factor(Group, levels = c(merged_group_levels[1:n_groups],'Other')))
+}
+```
+
+Create datasets
+
+```{r}
+collapsed_group_df_v4rna <- 
+  mpn_hf_rna %>% 
+  subset_taxa(!Group %in% c('Cercozoa','Dictyochophyceae','InSedMAST','Cantina')) %>% 
+  transform_sample_counts(percentage) %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  reduce_groups_to_plot(14)
+
+collapsed_group_df_v9 <- 
+  mpn_v9_hf %>% 
+  subset_taxa(!Group %in% c('Cercozoa','Dictyochophyceae')) %>% 
+  transform_sample_counts(percentage) %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  reduce_groups_to_plot(14)
+
+collapsed_group_df_mtags <- 
+  mpn_mtags_pico %>% 
+  subset_taxa(Group %in% merged_group_levels) %>% 
+  subset_taxa(!Group %in% c('Cercozoa','Dictyochophyceae')) %>% 
+  transform_sample_counts(percentage) %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  reduce_groups_to_plot(14)
+
+collapsed_group_df_tara <- 
+  tara_hf %>%
+  subset_samples(Layer %in% c('DCM','SRF')) %>% 
+  subset_taxa(!Group %in% c('Dictyochophyceae','Cercozoa', # not comparable groups
+                       'Jakobida','MOCH-3','Heterolobosea','Placidida')) %>% # very low-abundant groups that add noise
+  transform_sample_counts(percentage) %>% 
+  tax_glom_custom('Group') %>% 
+  psmelt() %>% 
+  mutate(Layer = ifelse(Layer == 'SRF','Surface','DCM'),
+        Layer = factor(Layer, levels = c('Surface','DCM'))) %>% 
+  reduce_groups_to_plot(14)
+```
+
+Figure
+
+```{r}
+collapsed_group_df_extract_all <- 
+  collapsed_group_df_v4rna %>% mutate(Dataset = 'V4 RNA') %>% 
+  bind_rows(collapsed_group_df_v9 %>% mutate(Dataset = 'V9 DNA')) %>% 
+  bind_rows(collapsed_group_df_mtags %>% mutate(Dataset = 'mTags')) %>% 
+  bind_rows(collapsed_group_df_tara %>% mutate(Dataset = 'TARA V9')) %>% 
+  mutate(Dataset = factor(Dataset, levels = rev(c('V4 DNA','V4 RNA','V9 DNA','mTags','TARA V9'))),
+         Group = factor(Group, levels = rev(levels(Group))))
+
+fig2 <- 
+  collapsed_group_df_extract_all %>% 
+  ggplot(aes(y = Dataset, x = perc, fill = Group)) +
+  geom_col(color = 'gray20',
+           size = 0.2) +
+  theme_bw() +
+  scale_fill_manual(values = merged_group_colors[names(merged_group_colors) %in% levels(collapsed_group_df_extract_all$Group)],
+                    # guide= guide_legend(reverse=T),
+                    name = '',
+                    drop = FALSE) +
+  theme(legend.position = 'bottom',
+        strip.background = element_rect(fill = NA)) +
+  ylab(NULL) +
+  xlab('Relative read abundance (%)') +
+  theme(panel.grid = element_blank()) +
+  facet_grid(rows = vars(Layer), scales = 'free', space = 'free') + 
+  scale_x_continuous(expand = c(0.01,0.01))
+
+ggsave(fig2, 
+       filename = 'fig2.pdf', 
+       height = 6, 
+       width = 6.5)
+```
+

@@ -1,0 +1,93 @@
+---
+title: "Phyloseq setup"
+author: "Aleix Obiol"
+date: "12/28/2020"
+output: html_document
+---
+
+# Load auxiliary functions 
+
+```{r}
+source('aux_functions.R')
+```
+
+# Creating phyloseq objects to work with
+
+## Read all Malaspina 18S file
+
+```{r}
+mpn_ps <- readRDS('../tables/MPN_18S.phy')
+```
+
+## Subset to keep only HF
+
+### Import ASVs from pigmented taxa
+
+```{r}
+photo_dictyo_asvs <- 
+  c("ASV_5965", "ASV_9442", "ASV_9958", "ASV_9261", "ASV_17220", "ASV_19109", "ASV_11115", "ASV_11220", "ASV_13324", "ASV_16999", "ASV_4878m", "ASV_3016m", "ASV_3833", "ASV_8487", "ASV_20377", "ASV_8468", "ASV_3285", "ASV_6174", "ASV_6615", "ASV_6510", "ASV_5920", "ASV_6931", "ASV_2546", "ASV_4119", "ASV_4144", "ASV_2435", "ASV_11172", "ASV_212", "ASV_6884", "ASV_13025", "ASV_117", "ASV_12038", "ASV_8335", "ASV_6159", "ASV_1312", "ASV_519", "ASV_15079", "ASV_3379", "ASV_3683m", "ASV_2748m", "ASV_9428m", "ASV_1162", "ASV_475m", "ASV_7425", "ASV_2901", "ASV_4069", "ASV_8220m", "ASV_10159", "ASV_8280m", "ASV_12465", "ASV_1977m", "ASV_153m", "ASV_1211m", "ASV_281", "ASV_2159", "ASV_10848", "ASV_6084m", "ASV_12047", "ASV_13689m", "ASV_10227", "ASV_10473", "ASV_12896", "ASV_4524m", "ASV_9400", "ASV_1948", "ASV_7733m", "ASV_9353", "ASV_17684", "ASV_4232", "ASV_11132", "ASV_21180", "ASV_23370", "ASV_2491m", "ASV_1011m", "ASV_1463", "ASV_1298", "ASV_3728", "ASV_9244", "ASV_12154", "ASV_3422", "ASV_9962", "ASV_1725m", "ASV_714", "ASV_5837", "ASV_12922", "ASV_15791", "ASV_21155", "ASV_3739", "ASV_8245", "ASV_14845", "ASV_1337m", "ASV_17456", "ASV_17554", "ASV_18583", "ASV_18977", "ASV_19279", "ASV_19401", "ASV_19696", "ASV_21701", "ASV_21736", "ASV_22483m", "ASV_22821", "ASV_23055", "ASV_3225m", "ASV_5329m", "ASV_8924","ASV_21781", "ASV_9136", "ASV_6384", "ASV_17666", "ASV_14465", "ASV_4304", "ASV_12335", "ASV_6834", "ASV_20207", "ASV_8485", "ASV_4917")
+
+photo_dictyo_asvs_RNA <- 
+  c("ASV_17853", "ASV_21802", "ASV_17719", "ASV_19012", "ASV_15163", "ASV_17384", "ASV_15633", "ASV_10023", "ASV_20837", "ASV_5819", "ASV_22441", "ASV_14798", "ASV_10899", "ASV_21001", "ASV_11355", "ASV_20621", "ASV_11894", "ASV_20452", "ASV_17995", "ASV_20833")
+
+photo_cercozoa_asvs <- 
+  c("ASV_2097", "ASV_6729", "ASV_3118", "ASV_8557", "ASV_5649", "ASV_532", "ASV_17120")
+```
+
+### Subset
+
+```{r}
+mpn_hf <- 
+  mpn_ps %>% 
+  subset_taxa(HF == 'Yes' & 
+                !Supergroup %in% c('Excavata','Amoebozoa')) %>%  # our V4 amplicons do not work well with these
+  prune_taxa(taxa = !taxa_names(.) %in% c(photo_dictyo_asvs, photo_dictyo_asvs_RNA, photo_cercozoa_asvs)) %>%
+  prune_samples(sample_sums(.) >= 500,.) %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+```
+
+### Separate extracts, surface and vertical profiles (DNA)
+
+```{r}
+mpn_dna <- 
+  mpn_ps %>% 
+  prune_samples(samples = sample_names(.) %in% 
+                  sample_names(mpn_ps %>% 
+                                 subset_taxa(HF == 'Yes' & 
+                                               !Supergroup %in% c('Excavata','Amoebozoa')) %>%
+                                 subset_samples(Extract == 'DNA') %>% 
+                                 prune_taxa(taxa = !taxa_names(.) %in% c(photo_dictyo_asvs, photo_cercozoa_asvs)) %>% 
+                                 prune_samples(sample_sums(.) >= 500,.))) %>% 
+  prune_taxa(taxa = taxa_sums(.) > 0)
+
+mpn_hf_dna <- 
+  mpn_hf %>% 
+  subset_samples(Extract == 'DNA') %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+
+mpn_hf_rna <- 
+  mpn_hf %>% 
+  subset_samples(Extract == 'RNA') %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+
+mpn_hf_sf <- 
+  mpn_hf_dna %>% 
+  subset_samples(Layer == 'Surface') %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+
+mpn_hf_vp_dna <- 
+  mpn_hf_dna %>% 
+  subset_samples(Dataset == 'Vertical_DNA') %>% 
+  prune_taxa(taxa_sums(.) > 0, .)
+```
+
+### Save objects
+
+```{r}
+saveRDS(mpn_dna, '../tables/MPN_18S_DNA.phy')
+saveRDS(mpn_hf,'../tables/MPN_18S_HF.phy')
+saveRDS(mpn_hf_dna, '../tables/MPN_18S_HF_DNA.phy')
+saveRDS(mpn_hf_rna, '../tables/MPN_18S_HF_RNA.phy')
+saveRDS(mpn_hf_sf, '../tables/MPN_18S_HF_DNA_SF.phy')
+saveRDS(mpn_hf_vp_dna, '../tables/MPN_18S_HF_DNA_VP.phy')
+```
