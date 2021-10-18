@@ -137,8 +137,9 @@ p_shannon_layer <-
   left_join(as_tibble(sample_data(mpn_hf_dna), rownames = 'sample_names')) %>% 
   ggplot(aes(y = fct_rev(Layer), x = estimate)) + 
     geom_jitter(alpha = 0.4, 
-              width = 0.2) +
-  geom_boxplot(outlier.color = NULL,
+              height = 0.2,
+              size = 1) +
+  geom_boxplot(outlier.shape = NA,
                alpha = 0.7,
                size = 0.3) +
   guides(fill = 'none') +
@@ -158,8 +159,9 @@ p_perc_picoeuk <-
   ggplot(data = perc_picoeuk_all,
          aes(y = Layer, x =Percentage)) +
   geom_jitter(alpha = 0.4, 
-              height = 0.2) +
-  geom_boxplot(outlier.color = NULL,
+              height = 0.2,
+              size = 1) +
+  geom_boxplot(outlier.shape = NA,
                alpha = 0.7,
                size = 0.3) +
   theme(panel.grid = element_blank()) +
@@ -175,7 +177,7 @@ p_groups_layer <-
              size = 0.2) +
   theme_bw() +
     scale_fill_manual(values = col_list[names(col_list) %in%levels(collapsed_group_df_reduced$Group)],
-                      # guide=guide_legend(reverse=T),
+                      guide=guide_legend(ncol = 4),
                       name = '') +
     theme(legend.position = 'bottom') +
     ylab(NULL) +
@@ -185,14 +187,16 @@ p_groups_layer <-
 
 fig1 <- 
   ( (p_perc_picoeuk + p_shannon_layer) / p_groups_layer ) & 
-  plot_annotation(tag_levels = 'A') & 
-  theme(text = element_text(size = 12),
-        legend.text = element_text(size = 9))
+  plot_annotation(tag_levels = 'A') &
+  theme(text = element_text(size = 10),
+        axis.title = element_text(size = 10),
+        legend.text = element_text(size = 8),
+        plot.margin = unit(c(0,0.5,0,0),'cm'))
 
 ggsave(filename = 'fig1.pdf',
        fig1, 
-       height = 6.5,
-       width = 7)
+       height = 5,
+       width = 5)
 ```
 
 ## Figure 3
@@ -227,7 +231,10 @@ fig3A <-
   scale_fill_viridis_c(name = 'Temp (ºC)') +
   theme(panel.grid = element_blank(),
         legend.position = 'left',
-        legend.title = element_text(size = 10))
+        legend.title = element_text(size = 10),
+        text = element_text(size = 10),
+        axis.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
 ```
 
 ### B
@@ -276,7 +283,13 @@ fig3B <-
   xlab('Geographical distance (km)') +
   theme(panel.grid = element_blank()) +
   scale_x_discrete(breaks = seq(5000,20000,5000),
-                   labels = seq(5000,20000,5000))
+                   labels = seq(5000,20000,5000)) +
+  theme(panel.grid = element_blank(),
+        legend.position = 'left',
+        legend.title = element_text(size = 10),
+        text = element_text(size = 10),
+        axis.title = element_text(size = 10),
+        legend.text = element_text(size = 8))  
 ```
 
 ### Composite
@@ -287,8 +300,8 @@ fig3 <-
 
 ggsave(plot = fig3,
        filename = 'fig3.pdf',
-       width = 9,
-       height = 4)
+       width = 7,
+       height = 3)
 ```
 
 

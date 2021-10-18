@@ -9,7 +9,7 @@ library(ggtext)
 
 # Theme set for ggplot
 
-theme_set(theme_bw(base_size = 12))
+theme_set(theme_bw(base_size = 10))
 
 # Phyloseq auxiliary functions
 

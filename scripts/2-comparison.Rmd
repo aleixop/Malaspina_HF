@@ -110,7 +110,7 @@ mpn_extracts <-
 ```{r}
 extract_summary_all <- 
   psmelt(mpn_hf) %>% 
-  rename(ASVid = OTU) %>% 
+  dplyr::rename(ASVid = OTU) %>% 
   group_by(ASVid, Extract) %>% 
   summarise(total = sum(Abundance)) %>% 
   spread(Extract, total, fill = 0) %>% 
@@ -339,7 +339,10 @@ fig2 <-
                     name = '',
                     drop = FALSE) +
   theme(legend.position = 'bottom',
-        strip.background = element_rect(fill = NA)) +
+        strip.background = element_rect(fill = NA),
+        text = element_text(size = 10),
+        axis.title = element_text(size = 10),
+        legend.text = element_text(size = 8)) +
   ylab(NULL) +
   xlab('Relative read abundance (%)') +
   theme(panel.grid = element_blank()) +
@@ -348,7 +351,7 @@ fig2 <-
 
 ggsave(fig2, 
        filename = 'fig2.pdf', 
-       height = 6, 
-       width = 6.5)
+       height = 5, 
+       width = 5.5)
 ```
 

@@ -95,7 +95,7 @@ selected_prok_groups <-
   c("Actinomarinales", "SAR86", "Flavobacteriales", "Prochlorococcus", "Rhodobacterales", "SAR11", "SAR116")
 
 tax_prok_simplified <- 
-  read_tsv('~/Desktop/tax_prok_simplified.txt') %>% 
+  read_tsv('../other/tax_prok_simplified.txt') %>% 
   mutate(net_name = ifelse(`LEVEL-2` %in% selected_prok_groups, `LEVEL-2`,'Other'),
          net_name = factor(net_name, levels = c(selected_prok_groups,'Other'))) %>% 
   select(-contains('Consensus'))
@@ -303,7 +303,9 @@ plotter_temp <- function(df){
 }
 
 fig5A <- 
-  plotter_temp(graph_prokhf_filtered)
+  plotter_temp(graph_prokhf_filtered) +
+  theme(legend.position = 'top',
+        legend.box = 'horizontal')
 ```
 
 ## B
@@ -383,7 +385,8 @@ fig5B <-
          size = 'none',
          node_size = 'none',
          edge_width = 'none',
-         edge_alpha = 'none')
+         edge_alpha = 'none') +
+  theme(legend.position = 'bottom')  
 ```
 
 ## AB
@@ -392,7 +395,7 @@ fig5B <-
 fig5AB <- 
   fig5A / 
   fig5B +
-  plot_layout(heights = c(1,1)) +
+  plot_layout(heights = c(0.7,0.3)) +
   plot_annotation(tag_levels = 'A')
 
 ggsave(plot = fig5AB,
@@ -463,7 +466,7 @@ estimate_prok_all <-
                 gp = gpar(col = 'white', lwd = 0.2),
                 show_annotation_name = c(cc.Temp = FALSE),
                 annotation_legend_param =  list(
-                  direction = 'vertical',
+                  direction = 'horizontal',
                                                 title = 'Temperature\nestimate'))
 
 names_prok_all <- 
@@ -490,7 +493,7 @@ fig5C <-
          column_names_rot = 45,
          name = 'correlation',
          heatmap_legend_param = list(
-           # direction = 'horizontal', 
+           direction = 'horizontal', 
            title = 'Correlation'),
          # clustering_method_columns = 'centroid',
          # clustering_method_rows = 'centroid',
