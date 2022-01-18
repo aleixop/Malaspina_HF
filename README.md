@@ -6,7 +6,7 @@
 This repository contains code and data included in:
 
 --------
-Obiol, A., Muhovic I. and Massana, R. Oceanic heterotrophic flagellates are dominated by a few widespread taxa. *Limnol. Oceanogr.* (in press)
+Obiol, A., Muhovic I. and Massana, R. Oceanic heterotrophic flagellates are dominated by a few widespread taxa. *Limnol. Oceanogr.* 2021; 66:4240:4253. doi: 10.1002/lno.11956
 
 --------
 
